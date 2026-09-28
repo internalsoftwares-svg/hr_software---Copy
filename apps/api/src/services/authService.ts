@@ -1,0 +1,553 @@
+import crypto from "crypto";
+import bcrypt from "bcryptjs";
+import nodemailer from "nodemailer";
+import { RefreshToken, RoleName, User } from "@prisma/client";
+import { prisma } from "../lib/prisma";
+import { writeAuditLog } from "../lib/audit";
+import {
+  createCsrfToken,
+  createFamilyId,
+  createJti,
+  createSecureToken,
+  hashToken,
+} from "../lib/security";
+import { signAccessToken, signRefreshToken } from "../lib/jwt";
+import type {
+  ForgotPasswordInput,
+  LoginInput,
+  RegisterInput,
+  ResetPasswordInput,
+} from "../schemas/auth";
+
+const PASSWORD_RESET_TOKEN_TTL_MINUTES = 60;
+const LOCK_THRESHOLD = 5;
+const LOCK_MINUTES = 15;
+export const REFRESH_TOKEN_TTL_DAYS = 30;
+// A page open in two tabs can each hold the same refresh token and race to
+// rotate it when the access token expires — the loser presents a token that's
+// already revoked a few milliseconds earlier by the winner. Tolerate reuse of
+// a just-rotated token within this window by walking to its replacement
+// instead of treating it as theft (which would nuke the whole session family).
+const REFRESH_REUSE_GRACE_MS = 30_000;
+
+type SessionContext = {
+  ipAddress?: string;
+  userAgent?: string;
+};
+
+type SessionBundle = {
+  accessToken: string;
+  refreshToken: string;
+  csrfToken: string;
+  user: UserWithRoles;
+};
+
+type UserWithRoles = User & {
+  roles: { role: RoleName }[];
+  department?: { id: string; name: string } | null;
+};
+
+type RefreshClaims = {
+  sub: string;
+  roles: RoleName[];
+  familyId: string;
+  jti: string;
+};
+
+let _mailer: nodemailer.Transporter | null = null;
+
+function getMailer() {
+  if (_mailer) return _mailer;
+
+  const host = process.env.EMAIL_SMTP_HOST;
+  const user = process.env.EMAIL_SMTP_USER;
+  const pass = process.env.EMAIL_SMTP_PASS;
+
+  if (!host || !user || !pass) {
+    throw new Error("Email transport is not configured");
+  }
+
+  _mailer = nodemailer.createTransport({
+    host,
+    port: Number(process.env.EMAIL_SMTP_PORT || 587),
+    secure: process.env.EMAIL_SMTP_SECURE === "true",
+    auth: { user, pass },
+  });
+  return _mailer;
+}
+
+function getRefreshExpiry() {
+  return new Date(Date.now() + 1000 * 60 * 60 * 24 * REFRESH_TOKEN_TTL_DAYS);
+}
+
+async function loadUserByEmail(email: string) {
+  return prisma.user.findUnique({
+    where: { email: email.toLowerCase() },
+    include: {
+      roles: true,
+      department: {
+        select: { id: true, name: true },
+      },
+    },
+  });
+}
+
+async function loadUserById(userId: string) {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      roles: true,
+      department: {
+        select: { id: true, name: true },
+      },
+    },
+  });
+}
+
+export async function registerUser(input: RegisterInput & { mustChangePassword?: boolean }) {
+  const normalizedEmail = input.email.toLowerCase();
+  const existing = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+  });
+  if (existing) {
+    throw new Error("Email already registered");
+  }
+
+  const passwordHash = await bcrypt.hash(input.password, 12);
+  const user = await prisma.user.create({
+    data: {
+      email: normalizedEmail,
+      passwordHash,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      phone: input.phone,
+      departmentId: input.departmentId,
+      passwordChangedAt: new Date(),
+      mustChangePassword: input.mustChangePassword ?? false,
+    },
+  });
+
+  await writeAuditLog({
+    actorId: user.id,
+    action: "auth.register",
+    resource: "User",
+    resourceId: user.id,
+    meta: { email: user.email },
+  });
+
+  return user;
+}
+
+async function createSession(
+  user: UserWithRoles,
+  context: SessionContext,
+): Promise<SessionBundle> {
+  const roles = user.roles.map((role) => role.role);
+  const familyId = createFamilyId();
+  const jti = createJti();
+  const csrfToken = createCsrfToken();
+  const refreshToken = signRefreshToken({
+    sub: user.id,
+    roles,
+    familyId,
+    jti,
+  } satisfies RefreshClaims);
+  const refreshTokenRecord = await prisma.refreshToken.create({
+    data: {
+      userId: user.id,
+      tokenHash: hashToken(refreshToken),
+      familyId,
+      jti,
+      expiresAt: getRefreshExpiry(),
+      userAgent: context.userAgent,
+      ipAddress: context.ipAddress,
+    },
+  });
+
+  const accessToken = signAccessToken({
+    sub: user.id,
+    roles,
+    sessionId: refreshTokenRecord.id,
+    familyId,
+  });
+
+  return { accessToken, refreshToken, csrfToken, user };
+}
+
+async function recordLoginAttempt(input: {
+  email: string;
+  userId?: string;
+  success: boolean;
+  reason?: string;
+  context?: SessionContext;
+}) {
+  await prisma.loginAttempt.create({
+    data: {
+      email: input.email,
+      userId: input.userId,
+      success: input.success,
+      reason: input.reason,
+      ipAddress: input.context?.ipAddress,
+      userAgent: input.context?.userAgent,
+    },
+  });
+}
+
+export async function login(
+  input: LoginInput,
+  context: SessionContext,
+): Promise<SessionBundle> {
+  try {
+    const user = await loadUserByEmail(input.email);
+
+    if (!user) {
+      await recordLoginAttempt({
+        email: input.email,
+        success: false,
+        reason: "user_not_found",
+        context,
+      });
+      throw new Error("Invalid credentials");
+    }
+
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      await recordLoginAttempt({
+        email: input.email,
+        userId: user.id,
+        success: false,
+        reason: "account_locked",
+        context,
+      });
+      throw new Error("Account is temporarily locked");
+    }
+
+    const valid = await bcrypt.compare(input.password, user.passwordHash);
+    if (!valid) {
+      const failedLoginCount = user.failedLoginCount + 1;
+      const shouldLock = failedLoginCount >= LOCK_THRESHOLD;
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginCount: shouldLock ? 0 : failedLoginCount,
+          lockedUntil: shouldLock
+            ? new Date(Date.now() + 1000 * 60 * LOCK_MINUTES)
+            : user.lockedUntil,
+        },
+      });
+
+      void Promise.all([
+        recordLoginAttempt({ email: input.email, userId: user.id, success: false, reason: "invalid_password", context }),
+        writeAuditLog({ actorId: user.id, action: "auth.login.failed", resource: "User", resourceId: user.id, meta: { reason: "invalid_password", failedLoginCount } }),
+      ]).catch((e) => console.error("Failed login audit write failed:", e));
+      throw new Error("Invalid credentials");
+    }
+
+    // Update login metadata without a separate re-fetch — user already has roles+department
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginCount: 0,
+        lockedUntil: null,
+        lastLoginAt: new Date(),
+      },
+    });
+
+    const session = await createSession(user, context);
+
+    // Fire-and-forget: don't block the login response on audit writes
+    void Promise.all([
+      recordLoginAttempt({ email: input.email, userId: user.id, success: true, context }),
+      writeAuditLog({
+        actorId: user.id,
+        action: "auth.login.success",
+        resource: "User",
+        resourceId: user.id,
+        meta: { ipAddress: context.ipAddress, userAgent: context.userAgent },
+      }),
+    ]).catch((e) => console.error("Login audit write failed:", e));
+
+    return session;
+  } catch (error: any) {
+    console.error("AuthService.login error:", {
+      message: error?.message,
+      code: error?.code ?? error?.name,
+      stack: error?.stack,
+      prisma: error?.meta ?? error?.clientVersion,
+    });
+    throw error;
+  }
+}
+
+// Follows replacedById pointers from an already-rotated token to whichever
+// token is currently active in its family. Returns null if the chain is
+// broken, ends in a revoked/expired token, or the record was never rotated.
+async function findActiveDescendant(
+  record: RefreshToken,
+): Promise<RefreshToken | null> {
+  let node = record;
+  const visited = new Set([node.id]);
+
+  while (node.replacedById) {
+    if (visited.has(node.replacedById)) return null;
+    const next = await prisma.refreshToken.findUnique({
+      where: { id: node.replacedById },
+    });
+    if (!next) return null;
+    visited.add(next.id);
+    node = next;
+  }
+
+  if (node.id === record.id) return null;
+  if (node.revokedAt || node.expiresAt < new Date()) return null;
+  return node;
+}
+
+export async function refreshSession(
+  refreshToken: string,
+  context: SessionContext,
+): Promise<SessionBundle> {
+  const tokenHash = hashToken(refreshToken);
+  const currentRecord = await prisma.refreshToken.findUnique({
+    where: { tokenHash },
+  });
+
+  if (!currentRecord) {
+    throw new Error("Invalid refresh token");
+  }
+
+  let activeRecord = currentRecord;
+
+  if (currentRecord.revokedAt) {
+    const withinGrace =
+      Date.now() - currentRecord.revokedAt.getTime() < REFRESH_REUSE_GRACE_MS;
+    const descendant = withinGrace
+      ? await findActiveDescendant(currentRecord)
+      : null;
+
+    if (!descendant) {
+      await prisma.refreshToken.updateMany({
+        where: {
+          userId: currentRecord.userId,
+          familyId: currentRecord.familyId,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
+      await writeAuditLog({
+        actorId: currentRecord.userId,
+        action: "auth.refresh.reuse_detected",
+        resource: "RefreshToken",
+        resourceId: currentRecord.id,
+        meta: {
+          familyId: currentRecord.familyId,
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+        },
+      });
+      throw new Error("Refresh token reuse detected");
+    }
+
+    // Another tab already rotated this token moments ago — pick up from
+    // where it left off instead of punishing this tab for racing.
+    activeRecord = descendant;
+  }
+
+  const user = await loadUserById(activeRecord.userId);
+  if (!user) {
+    throw new Error("Invalid refresh token");
+  }
+
+  const roles = user.roles.map((role) => role.role);
+  const newId = crypto.randomUUID();
+  const newJti = createJti();
+  const newRefreshToken = signRefreshToken({
+    sub: user.id,
+    roles,
+    familyId: activeRecord.familyId,
+    jti: newJti,
+  } satisfies RefreshClaims);
+
+  await prisma.$transaction([
+    prisma.refreshToken.update({
+      where: { id: activeRecord.id },
+      data: { revokedAt: new Date(), lastUsedAt: new Date(), replacedById: newId },
+    }),
+    prisma.refreshToken.create({
+      data: {
+        id: newId,
+        userId: user.id,
+        tokenHash: hashToken(newRefreshToken),
+        familyId: activeRecord.familyId,
+        jti: newJti,
+        expiresAt: getRefreshExpiry(),
+        userAgent: context.userAgent,
+        ipAddress: context.ipAddress,
+      },
+    }),
+  ]);
+
+  const accessToken = signAccessToken({
+    sub: user.id,
+    roles,
+    sessionId: newId,
+    familyId: activeRecord.familyId,
+  });
+  const csrfToken = createCsrfToken();
+
+  void writeAuditLog({
+    actorId: user.id,
+    action: "auth.refresh.success",
+    resource: "RefreshToken",
+    resourceId: activeRecord.id,
+    meta: {
+      familyId: activeRecord.familyId,
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent,
+    },
+  }).catch((e) => console.error("Refresh audit write failed:", e));
+
+  return { accessToken, refreshToken: newRefreshToken, csrfToken, user };
+}
+
+export async function logoutSession(
+  refreshToken: string,
+  context: SessionContext,
+) {
+  const tokenHash = hashToken(refreshToken);
+  const currentRecord = await prisma.refreshToken.findUnique({
+    where: { tokenHash },
+  });
+
+  if (currentRecord && !currentRecord.revokedAt) {
+    await prisma.refreshToken.update({
+      where: { id: currentRecord.id },
+      data: { revokedAt: new Date() },
+    });
+
+    await writeAuditLog({
+      actorId: currentRecord.userId,
+      action: "auth.logout",
+      resource: "RefreshToken",
+      resourceId: currentRecord.id,
+      meta: { ipAddress: context.ipAddress, userAgent: context.userAgent },
+    });
+  }
+}
+
+export async function requestPasswordReset(
+  input: ForgotPasswordInput,
+  context: SessionContext,
+) {
+  const user = await loadUserByEmail(input.email);
+  if (!user) {
+    await recordLoginAttempt({
+      email: input.email,
+      success: false,
+      reason: "password_reset_unknown_email",
+      context,
+    });
+    return { accepted: true };
+  }
+
+  const token = createSecureToken();
+  const tokenHash = hashToken(token);
+  const expiresAt = new Date(
+    Date.now() + 1000 * 60 * PASSWORD_RESET_TOKEN_TTL_MINUTES,
+  );
+
+  await prisma.passwordResetToken.create({
+    data: {
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+    },
+  });
+
+  const resetUrl = `${
+    process.env.FRONTEND_URL || "http://localhost:3000"
+  }/forgot-password?token=${token}`;
+  const mailer = getMailer();
+  await mailer.sendMail({
+    from:
+      process.env.EMAIL_FROM ||
+      process.env.EMAIL_SMTP_USER ||
+      "no-reply@svgoi.local",
+    to: user.email,
+    subject: "Reset your SVGOI appraisal password",
+    text: `Reset your password using this link: ${resetUrl}`,
+    html: `<p>Reset your password using this link:</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
+  });
+
+  await writeAuditLog({
+    actorId: user.id,
+    action: "auth.password_reset.requested",
+    resource: "User",
+    resourceId: user.id,
+    meta: { ipAddress: context.ipAddress, userAgent: context.userAgent },
+  });
+
+  return { accepted: true };
+}
+
+export async function resetPassword(
+  input: ResetPasswordInput,
+  context: SessionContext,
+) {
+  const tokenHash = hashToken(input.token);
+  const resetRecord = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash },
+    include: { user: { include: { roles: true } } },
+  });
+
+  if (
+    !resetRecord ||
+    resetRecord.usedAt ||
+    resetRecord.expiresAt < new Date()
+  ) {
+    throw new Error("Invalid or expired reset token");
+  }
+
+  const passwordHash = await bcrypt.hash(input.password, 12);
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: resetRecord.userId },
+      data: {
+        passwordHash,
+        passwordChangedAt: new Date(),
+        failedLoginCount: 0,
+        lockedUntil: null,
+        mustChangePassword: false,
+      },
+    }),
+    prisma.passwordResetToken.update({
+      where: { tokenHash },
+      data: { usedAt: new Date() },
+    }),
+    prisma.refreshToken.updateMany({
+      where: { userId: resetRecord.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
+
+  await writeAuditLog({
+    actorId: resetRecord.userId,
+    action: "auth.password_reset.completed",
+    resource: "User",
+    resourceId: resetRecord.userId,
+    meta: { ipAddress: context.ipAddress, userAgent: context.userAgent },
+  });
+
+  return { success: true };
+}
+
+export async function issueBootstrapSession(
+  userId: string,
+  context: SessionContext,
+) {
+  const user = await loadUserById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  return createSession(user, context);
+}

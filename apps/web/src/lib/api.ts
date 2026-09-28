@@ -1,0 +1,758 @@
+// apps/web/src/lib/api.ts
+import { apiClient } from "@/lib/api-client";
+import type {
+  ApiResponse,
+  FacultyDocumentSummary,
+  AppraisalStatus,
+  DepartmentSummary,
+  FacultyAppraisalPolicy,
+  FacultyAppraisalRequestPayload,
+  FacultyAppraisalRequestStatus,
+  FacultyEvidenceUpload,
+  FacultyProfileDocumentFieldKey,
+  FacultyProfile,
+  FacultyProfilePayload,
+} from "@svgoi/shared-types";
+import type { LoginInput, RegisterInput } from "@svgoi/zod-schemas";
+
+export type Role =
+  | "EMPLOYEE"
+  | "HOD"
+  | "COMMITTEE"
+  | "COMMITTEE_ACADEMIC"
+  | "COMMITTEE_RESEARCH"
+  | "COMMITTEE_OTHER"
+  | "HR"
+  | "ADMIN"
+  | "SUPER_ADMIN"
+  | "FACULTY"
+  | "MANAGEMENT";
+
+export interface SessionUser {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  roles: Role[];
+  departmentId?: string | null;
+  department?: { id: string; name: string } | null;
+  mustChangePassword?: boolean;
+}
+
+export interface HrDepartmentMember {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  roles: Array<{ role: string }>;
+}
+
+export interface HrDepartmentSummary {
+  id: string;
+  name: string;
+  code?: string | null;
+  hodId?: string | null;
+  hod?: { id: string; firstName: string; lastName: string; email: string } | null;
+  users?: HrDepartmentMember[];
+  _count?: { users: number };
+}
+
+export interface HrCycleSummary {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  isActive: boolean;
+  _count?: { appraisals: number };
+}
+
+export interface HrUserSummary {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  departmentId?: string | null;
+  facultyProfile?: Record<string, unknown> | null;
+  documents?: Array<{
+    id: string;
+    name: string;
+    viewUrl?: string | null;
+    directUrl?: string | null;
+    module?: string | null;
+    fieldKey?: string | null;
+  }>;
+  roles: Array<{ role: string }>;
+  lockedUntil?: string | null;
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  csrfToken: string;
+  user: SessionUser;
+}
+
+export interface AppraisalCycleSummary {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  isActive?: boolean;
+  status?: string;
+}
+
+export interface AppraisalItemSummary {
+  id: string;
+  key?: string;
+  label?: string;
+  points?: number | null;
+  selfScore?: number | null;
+  hodScore?: number | null;
+  committeeScore?: number | null;
+  weight: number;
+  notes?: string | null;
+}
+
+export interface AppraisalSummary {
+  id: string;
+  userId: string;
+  cycleId: string;
+  status: AppraisalStatus;
+  submittedAt?: string | null;
+  locked?: boolean;
+  finalScore?: number | null;
+  finalPercent?: number | null;
+  hodRemarks?: string | null;
+  committeeNotes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  cycle?: AppraisalCycleSummary;
+  user?: SessionUser & { department?: { id: string; name: string } | null };
+  items?: AppraisalItemSummary[];
+}
+
+export interface HrAppraisalSummary {
+  id: string;
+  status: string;
+  submittedAt: string | null;
+  finalScore: number | null;
+  user: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    department: { id: string; name: string } | null;
+  };
+  cycle: {
+    id: string;
+    name: string;
+    startDate: string;
+    endDate: string;
+  };
+  totalSelectedPoints: number;
+  itemsCount: number;
+  finalPercent: number | null;
+  currentSalary: number;
+  superAdminApprovedPercent: number | null;
+}
+
+export interface SuperAdminAppraisalDetail {
+  id: string;
+  status: string;
+  finalScore: number | null;
+  finalPercent: number;
+  user: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    departmentId?: string | null;
+    department?: { id: string; name: string } | null;
+    facultyProfile?: {
+      currentSalary?: number;
+      lastIncrementDate?: string;
+    } | null;
+  };
+  cycle: {
+    id: string;
+    name: string;
+    startDate: string;
+    endDate: string;
+  };
+  items: Array<{
+    id: string;
+    key: string;
+    points: number;
+    notes?: string;
+  }>;
+  currentSalary: number;
+  revisedSalary: number;
+  superAdminApprovedPercent?: number | null;
+  superAdminRemark?: string | null;
+}
+
+export interface SuperAdminAppraisalSummary {
+  id: string;
+  status: string;
+  submittedAt: string | null;
+  finalScore: number | null;
+  finalPercent: number | null;
+  user: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    departmentId?: string | null;
+    department?: { id: string; name: string } | null;
+    facultyProfile?: {
+      currentSalary?: number;
+    } | null;
+  };
+  cycle: {
+    id: string;
+    name: string;
+    startDate: string;
+    endDate: string;
+  };
+  currentSalary: number;
+  totalSelectedPoints: number;
+  itemsCount: number;
+}
+
+export interface AppraisalReviewTrailEntry {
+  stage: "faculty" | "hodReview" | "committeeReview" | "hrReview" | "adminReview";
+  stageLabel: string;
+  approvedPoints: number | null;
+  remark: string | null;
+  byId: string | null;
+  by: string | null;
+  at: string | null;
+}
+
+export interface FacultyAppraisalItemDetail {
+  id: string;
+  criterionKey: string;
+  heading: string;
+  selectedValue: string;
+  selectedLabel: string;
+  facultyPoints: number;
+  facultyRemarks?: string | null;
+  finalPoints?: number;
+  reviewTrail?: AppraisalReviewTrailEntry[];
+  evidence: Array<{
+    fileName?: string;
+    url?: string;
+    viewUrl?: string | null;
+    directUrl?: string | null;
+    driveId?: string | null;
+  }>;
+}
+
+export interface FacultyAppraisalDetail {
+  id: string;
+  status: AppraisalStatus;
+  finalized?: boolean;
+  submittedAt?: string | null;
+  rejectionReason?: string | null;
+  rejectedAt?: string | null;
+  items: FacultyAppraisalItemDetail[];
+  finalScore?: number | null;
+  totalRequestedScore?: number | null;
+  finalPercent?: number | null;
+  hodRemarks?: Record<string, any>;
+  committeeNotes?: Record<string, any>;
+}
+
+export interface FacultyCycleSummary {
+  cycle: {
+    id: string;
+    name: string;
+    startDate: string;
+    endDate: string;
+    isActive: boolean;
+  };
+  appraisal: {
+    id: string;
+    status: AppraisalStatus;
+    submittedAt: string | null;
+    finalScore: number | null;
+    finalPercent: number | null;
+    rejectionReason?: string | null;
+  } | null;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  resource: string;
+  resourceId?: string | null;
+  meta?: string | null;
+  createdAt: string;
+  actor?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    roles?: Role[];
+  } | null;
+}
+
+type Envelope<T> = ApiResponse<T>;
+
+export interface UploadProgressSnapshot {
+  loaded: number;
+  total: number | null;
+  progress: number;
+}
+
+export interface UploadedDocumentResponse extends FacultyDocumentSummary {
+  criterionKey?: string;
+  fileName: string;
+  url: string;
+  validation?: {
+    label: string;
+    acceptedMimeTypes: string[];
+    maxSizeBytes: number;
+    required: boolean;
+  };
+}
+
+async function unwrap<T>(
+  request: Promise<{ data: Envelope<T> }>,
+): Promise<Envelope<T>> {
+  const { data } = await request;
+  return data;
+}
+
+async function uploadMultipartFile<T>(
+  moduleName: string,
+  fieldKey: string,
+  file: File,
+  options?: {
+    label?: string;
+    metadata?: Record<string, unknown>;
+    onUploadProgress?: (progress: UploadProgressSnapshot) => void;
+  },
+) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  if (options?.label) {
+    formData.append("label", options.label);
+  }
+
+  if (options?.metadata) {
+    formData.append("metadata", JSON.stringify(options.metadata));
+  }
+
+  return unwrap<T>(
+    apiClient.post(`/uploads/${moduleName}/${fieldKey}`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+      onUploadProgress: (event) => {
+        if (!options?.onUploadProgress) {
+          return;
+        }
+
+        const total = event.total ?? null;
+        const progress = total ? Math.round((event.loaded / total) * 100) : 0;
+        options.onUploadProgress({ loaded: event.loaded, total, progress });
+      },
+    }),
+  );
+}
+
+function splitFullName(fullName: string) {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  const firstName = parts.shift() ?? "";
+  const lastName = parts.length > 0 ? parts.join(" ") : firstName;
+
+  return { firstName, lastName };
+}
+
+export const api = {
+  uploads: {
+    uploadDocument: <T = UploadedDocumentResponse>(
+      moduleName: string,
+      fieldKey: string,
+      file: File,
+      options?: {
+        label?: string;
+        metadata?: Record<string, unknown>;
+        onUploadProgress?: (progress: UploadProgressSnapshot) => void;
+      },
+    ) => uploadMultipartFile<T>(moduleName, fieldKey, file, options),
+  },
+  auth: {
+    login: (data: LoginInput) =>
+      unwrap<AuthResponse>(apiClient.post("/auth/login", data)),
+    register: (data: RegisterInput) => {
+      const { firstName, lastName } = splitFullName(data.fullName);
+
+      return unwrap<{ id: string; email: string }>(
+        apiClient.post("/auth/register", {
+          email: data.email,
+          password: data.password,
+          firstName,
+          lastName,
+          departmentId: data.departmentId || undefined,
+        }),
+      );
+    },
+    logout: () => unwrap<{ message: string }>(apiClient.post("/auth/logout")),
+    refresh: () =>
+      unwrap<{ accessToken: string; csrfToken: string }>(
+        apiClient.post("/auth/refresh"),
+      ),
+    changePassword: (data: { currentPassword: string; newPassword: string }) =>
+      unwrap<{ message: string }>(apiClient.post("/auth/change-password", data)),
+  },
+  appraisals: {
+    list: () => unwrap<AppraisalSummary[]>(apiClient.get("/appraisals")),
+    getCycles: () =>
+      unwrap<Array<{ id: string; name: string; startDate: string; endDate: string; isActive: boolean }>>(
+        apiClient.get("/appraisals/cycles"),
+      ),
+    getById: (id: string) =>
+      unwrap<AppraisalSummary>(apiClient.get(`/appraisals/${id}`)),
+    update: (
+      id: string,
+      data: {
+        items: Array<{
+          id?: string;
+          key: string;
+          points: number;
+          weight: number;
+          notes?: string;
+        }>;
+        status?: AppraisalStatus;
+      },
+    ) => unwrap<AppraisalSummary>(apiClient.put(`/appraisals/${id}`, data)),
+    submit: (id: string) =>
+      unwrap<AppraisalSummary>(apiClient.post(`/appraisals/${id}/submit`)),
+  },
+  hod: {
+    getTeamAppraisals: () =>
+      unwrap<AppraisalSummary[]>(apiClient.get("/hod/review-list")),
+    getScorePreview: (data: Record<string, unknown>) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.post("/hod/scoring/preview", data),
+      ),
+    submitReview: (
+      id: string,
+      data: { metrics: Record<string, unknown>; remarks?: string },
+    ) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.post(`/hod/appraisals/${id}/score`, data),
+      ),
+    getFacultyRequests: (cycleId?: string) =>
+      unwrap<Record<string, unknown>[]>(
+        apiClient.get(`/hod/requests${cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : ""}`),
+      ),
+    getFacultyRequestById: (id: string) =>
+      unwrap<Record<string, unknown>>(apiClient.get(`/hod/requests/${id}`)),
+    submitFacultyReview: (
+      id: string,
+      payload: {
+        items: Array<{
+          itemId: string;
+          approvedPoints: number;
+          remark?: string;
+        }>;
+        additionalPoints?: number;
+        additionalPointsRemark?: string;
+        overallRemark?: string;
+        memoIssues?: number;
+      },
+    ) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.put(`/hod/requests/${id}/review`, payload),
+      ),
+    rejectAppraisal: (id: string, reason: string) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.put(`/hod/requests/${id}/reject`, { reason }),
+      ),
+    returnToFaculty: (id: string, reason: string) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.put(`/hod/requests/${id}/return-to-faculty`, { reason }),
+      ),
+  },
+  committee: {
+    getTeamAppraisals: (cycleId?: string) =>
+      unwrap<AppraisalSummary[]>(
+        apiClient.get(`/appraisals/committee/review-list${cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : ""}`),
+      ),
+    submitReview: (
+      id: string,
+      data: {
+        items: Array<{
+          itemId: string;
+          approvedPoints: number;
+          remark?: string;
+        }>;
+        overallRemark?: string;
+        finalize?: boolean;
+        additionalPoints?: number;
+        additionalPointsRemark?: string;
+      },
+    ) =>
+      unwrap<AppraisalSummary>(
+        apiClient.put(`/hod/committee/requests/${id}/review`, data),
+      ),
+    rejectAppraisal: (id: string, reason: string) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.put(`/hod/committee/requests/${id}/reject`, { reason }),
+      ),
+    // Per-category approval (Academic / Research / Co-curricular committee —
+    // the last one is the OTHERS enum value). Approves only the caller's
+    // category; backend auto-forwards to HR once all three are approved.
+    approveCategory: (
+      id: string,
+      data: {
+        items: Array<{
+          itemId: string;
+          approvedPoints: number;
+          remark?: string;
+        }>;
+        notes?: string;
+        category?: "ACADEMICS" | "RESEARCH" | "OTHERS";
+      },
+    ) =>
+      unwrap<{
+        appraisalId: string;
+        category: string;
+        categoryTotal: number;
+        combined: boolean;
+        status: string;
+        categoryApprovals: Array<{
+          category: string;
+          label: string;
+          approved: boolean;
+        }>;
+      }>(apiClient.put(`/appraisals/${id}/category-review`, data)),
+  },
+  hr: {
+    getTeamAppraisals: (cycleId?: string) =>
+      unwrap<HrAppraisalSummary[]>(
+        apiClient.get(`/hr/review-list${cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : ""}`),
+      ),
+    getApprovedAppraisals: () =>
+      unwrap<HrAppraisalSummary[]>(apiClient.get("/hr/approved-list")),
+    getById: (id: string) =>
+      unwrap<AppraisalSummary>(apiClient.get(`/hr/requests/${id}`)),
+    submitReview: (
+      id: string,
+      data: {
+        items: Array<{
+          itemId: string;
+          approvedPoints: number;
+          remark?: string;
+        }>;
+        overallRemark?: string;
+      },
+    ) =>
+      unwrap<AppraisalSummary>(
+        apiClient.put(`/hr/requests/${id}/review`, data),
+      ),
+    rejectAppraisal: (id: string, reason: string) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.put(`/hr/requests/${id}/reject`, { reason }),
+      ),
+    getUsers: () => unwrap<HrUserSummary[]>(apiClient.get("/hr/users")),
+    createUser: (data: {
+      email: string;
+      password: string;
+      firstName: string;
+      lastName: string;
+      roles?: string[];
+      departmentId?: string;
+    }) =>
+      unwrap<{ id: string; email: string }>(apiClient.post(`/hr/users`, data)),
+    updateUser: (
+      id: string,
+      data: {
+        email?: string;
+        firstName?: string;
+        lastName?: string;
+        roles?: string[];
+        departmentId?: string;
+      },
+    ) =>
+      unwrap<{ id: string; email: string }>(
+        apiClient.put(`/hr/users/${id}`, data),
+      ),
+    blockUser: (id: string, until?: string) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.put(`/hr/users/${id}/block`, { until }),
+      ),
+    unblockUser: (id: string) =>
+      unwrap<Record<string, unknown>>(apiClient.put(`/hr/users/${id}/unblock`)),
+    changeUserPassword: (id: string, newPassword: string) =>
+      unwrap<{ message: string }>(apiClient.put(`/hr/users/${id}/change-password`, { newPassword })),
+    getDepartments: () =>
+      unwrap<HrDepartmentSummary[]>(apiClient.get("/hr/departments")),
+    createDepartment: (data: {
+      name: string;
+      code?: string;
+      hodId?: string;
+      hod?: { firstName: string; lastName: string; email: string; password: string };
+    }) =>
+      unwrap<{ id: string; name: string }>(apiClient.post("/hr/departments", data)),
+    updateDepartment: (
+      id: string,
+      data: { name?: string; code?: string; hodId?: string | null },
+    ) =>
+      unwrap<{ id: string; name: string }>(apiClient.put(`/hr/departments/${id}`, data)),
+    getCycles: () =>
+      unwrap<HrCycleSummary[]>(apiClient.get("/hr/cycles")),
+    createCycle: (data: { name: string; startDate: string; endDate: string; isActive?: boolean }) =>
+      unwrap<HrCycleSummary>(apiClient.post("/hr/cycles", data)),
+    updateCycle: (
+      id: string,
+      data: { name?: string; startDate?: string; endDate?: string; isActive?: boolean },
+    ) =>
+      unwrap<HrCycleSummary>(apiClient.put(`/hr/cycles/${id}`, data)),
+  },
+  departments: {
+    list: () => unwrap<DepartmentSummary[]>(apiClient.get("/departments")),
+  },
+  faculty: {
+    getProfile: () => unwrap<FacultyProfile>(apiClient.get("/faculty/profile")),
+    saveProfile: (data: FacultyProfilePayload) =>
+      unwrap<FacultyProfile>(apiClient.put("/faculty/profile", data)),
+    uploadImage: (
+      file: File,
+      options?: {
+        label?: string;
+        metadata?: Record<string, unknown>;
+        onUploadProgress?: (progress: UploadProgressSnapshot) => void;
+      },
+    ) =>
+      api.uploads.uploadDocument(
+        "faculty-profile",
+        "profilePicture",
+        file,
+        options,
+      ),
+    uploadDocument: (
+      fieldKey: FacultyProfileDocumentFieldKey,
+      file: File,
+      options?: {
+        label?: string;
+        metadata?: Record<string, unknown>;
+        onUploadProgress?: (progress: UploadProgressSnapshot) => void;
+      },
+    ) => api.uploads.uploadDocument("faculty-profile", fieldKey, file, options),
+    getAppraisalPolicy: () =>
+      unwrap<FacultyAppraisalPolicy>(
+        apiClient.get("/faculty/appraisal/policy"),
+      ),
+    getAppraisalStatus: () =>
+      unwrap<FacultyAppraisalRequestStatus>(
+        apiClient.get("/faculty/appraisal/status"),
+      ),
+    getCycles: () =>
+      unwrap<FacultyCycleSummary[]>(
+        apiClient.get("/faculty/appraisal/cycles"),
+      ),
+    uploadAppraisalEvidence: (
+      criterionKey: string,
+      file: File,
+      options?: {
+        label?: string;
+        metadata?: Record<string, unknown>;
+        onUploadProgress?: (progress: UploadProgressSnapshot) => void;
+      },
+    ) =>
+      api.uploads.uploadDocument<FacultyEvidenceUpload>(
+        "appraisal-evidence",
+        criterionKey,
+        file,
+        { label: criterionKey, ...options },
+      ),
+    submitAppraisalRequest: (payload: FacultyAppraisalRequestPayload) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.post("/faculty/appraisal/request", payload),
+      ),
+    getAppraisalDetails: (appraisalId: string) =>
+      unwrap<FacultyAppraisalDetail>(
+        apiClient.get(`/faculty/appraisal/${appraisalId}`),
+      ),
+  },
+  adminReview: {
+    getList: (cycleId?: string) =>
+      unwrap<Record<string, unknown>[]>(
+        apiClient.get(`/admin-review/review-list${cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : ""}`),
+      ),
+    getById: (id: string) =>
+      unwrap<Record<string, unknown>>(apiClient.get(`/admin-review/requests/${id}`)),
+    submitReview: (
+      id: string,
+      data: {
+        items: Array<{ itemId: string; approvedPoints: number; remark?: string }>;
+        overallRemark?: string;
+      },
+    ) =>
+      unwrap<Record<string, unknown>>(apiClient.put(`/admin-review/requests/${id}/review`, data)),
+    rejectAppraisal: (id: string, reason: string) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.put(`/admin-review/requests/${id}/reject`, { reason }),
+      ),
+  },
+  superAdmin: {
+    getAppraisals: (params?: {
+      cycleId?: string;
+      departmentId?: string;
+      status?: string;
+    }) => {
+      const query = new URLSearchParams();
+      if (params?.cycleId) query.append("cycleId", params.cycleId);
+      if (params?.departmentId)
+        query.append("departmentId", params.departmentId);
+      if (params?.status) query.append("status", params.status);
+      const queryString = query.toString();
+      return unwrap<SuperAdminAppraisalSummary[]>(
+        apiClient.get(
+          `/admin/appraisals${queryString ? `?${queryString}` : ""}`,
+        ),
+      );
+    },
+    getStats: (params?: { cycleId?: string; departmentId?: string }) => {
+      const query = new URLSearchParams();
+      if (params?.cycleId) query.append("cycleId", params.cycleId);
+      if (params?.departmentId)
+        query.append("departmentId", params.departmentId);
+      const queryString = query.toString();
+      return unwrap<{
+        pendingCount: number;
+        approvedCount: number;
+        totalSalaryImpact: number;
+        totalAppraisals: number;
+      }>(
+        apiClient.get(
+          `/admin/appraisals/stats${queryString ? `?${queryString}` : ""}`,
+        ),
+      );
+    },
+    getById: (id: string) =>
+      unwrap<SuperAdminAppraisalDetail>(
+        apiClient.get(`/admin/appraisals/${id}`),
+      ),
+    approve: (
+      id: string,
+      data: {
+        adjustedPercent?: number;
+        remark?: string;
+      },
+    ) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.post(`/admin/appraisals/${id}/approve`, data),
+      ),
+    resetToCommittee: (id: string) =>
+      unwrap<Record<string, unknown>>(
+        apiClient.post(`/admin/appraisals/${id}/reset-to-committee`),
+      ),
+  },
+};
+
+export type { ApiResponse };
