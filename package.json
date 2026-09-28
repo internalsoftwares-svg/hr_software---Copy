@@ -1,0 +1,27 @@
+{
+  "name": "svgoi-appraisal",
+  "private": true,
+  "version": "0.1.0",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "packageManager": "pnpm@10.6.5",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "format": "prettier --write .",
+    "bootstrap": "pnpm install",
+    "postinstall": "pnpm --filter @svgoi/api prisma:generate",
+    "prisma:studio": "pnpm --filter @svgoi/api exec prisma studio"
+  },
+  "devDependencies": {
+    "eslint": "^8.54.0",
+    "prettier": "^2.8.8",
+    "turbo": "^1.9.0",
+    "typescript": "^5.1.6"
+  }
+}

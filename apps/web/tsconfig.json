@@ -1,0 +1,36 @@
+{
+    "extends": "../../tsconfig.json",
+    "compilerOptions": {
+        "jsx": "preserve",
+        "allowJs": false,
+        "noEmit": true,
+        "baseUrl": ".",
+        "moduleResolution": "bundler",
+        "paths": {
+            "@/*": [
+                "src/*"
+            ],
+            "@svgoi/*": [
+                "../../packages/*/src"
+            ]
+        },
+        "incremental": true,
+        "isolatedModules": true,
+        "plugins": [
+            {
+                "name": "next"
+            }
+        ]
+    },
+    "include": [
+        "next-env.d.ts",
+        "middleware.ts",
+        "app/**/*",
+        "src/**/*",
+        "../../packages/*/src/**/*",
+        ".next/types/**/*.ts"
+    ],
+    "exclude": [
+        "node_modules"
+    ]
+}

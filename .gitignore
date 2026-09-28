@@ -5,7 +5,7 @@ dist/
 .DS_Store
 /.idea
 /.vscode
-pnpm-lock.yaml
+
 **/.next/
 /.vercel
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
@@ -49,5 +49,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts.next
 
-*.json
+
 credentials/

@@ -1,0 +1,27 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "ESNext",
+        "lib": [
+            "DOM",
+            "ES2022"
+        ],
+        "moduleResolution": "Node",
+        "resolveJsonModule": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "strict": true,
+        "composite": true,
+        "baseUrl": ".",
+        "paths": {
+            "@svgoi/*": [
+                "packages/*/src"
+            ]
+        }
+    },
+    "include": [
+        "apps/**/*",
+        "packages/**/*"
+    ]
+}
