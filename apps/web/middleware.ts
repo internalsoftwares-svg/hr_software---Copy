@@ -1,38 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 
-function getApiOrigin() {
+export function middleware(request: NextRequest) {
   const apiUrl =
     process.env.NEXT_PUBLIC_API_URL ||
     (process.env.NODE_ENV === "production"
       ? "https://hr-software-api.vercel.app/api/v1"
       : "http://localhost:4000/api/v1");
 
+  let apiOrigin = "https://hr-software-api.vercel.app";
   try {
-    return new URL(apiUrl).origin;
+    apiOrigin = new URL(apiUrl).origin;
   } catch {
-    return process.env.NODE_ENV === "production"
-      ? "https://hr-software-api.vercel.app"
-      : "http://localhost:4000";
+    apiOrigin =
+      process.env.NODE_ENV === "production"
+        ? "https://hr-software-api.vercel.app"
+        : "http://localhost:4000";
   }
-}
 
-const apiOrigin = getApiOrigin();
-const productionApiOrigin = "https://hr-software-api.vercel.app";
-const allowedApiOrigins =
-  apiOrigin === productionApiOrigin
-    ? apiOrigin
-    : `${apiOrigin} ${productionApiOrigin}`;
-const connectSrc =
-  process.env.NODE_ENV !== "production"
-    ? `'self' https://www.googleapis.com ${allowedApiOrigins} ws: wss:`
-    : `'self' https://www.googleapis.com ${allowedApiOrigins} https://drive.usercontent.google.com/ https://lh3.googleusercontent.com`;
+  const productionApiOrigin = "https://hr-software-api.vercel.app";
+  const allowedApiOrigins =
+    apiOrigin === productionApiOrigin
+      ? apiOrigin
+      : `${apiOrigin} ${productionApiOrigin}`;
+      
+  const connectSrc =
+    process.env.NODE_ENV !== "production"
+      ? `'self' https://www.googleapis.com ${allowedApiOrigins} ws: wss:`
+      : `'self' https://www.googleapis.com ${allowedApiOrigins} https://drive.usercontent.google.com/ https://lh3.googleusercontent.com`;
 
-const imgSrc =
-  process.env.NODE_ENV !== "production"
-    ? `'self' data: http://localhost:4000 ${productionApiOrigin} https://drive.google.com https://drive.usercontent.google.com/ https://lh3.googleusercontent.com`
-    : `'self' data: ${allowedApiOrigins} https://drive.google.com https://drive.usercontent.google.com/ https://lh3.googleusercontent.com`;
+  const imgSrc =
+    process.env.NODE_ENV !== "production"
+      ? `'self' data: http://localhost:4000 ${productionApiOrigin} https://drive.google.com https://drive.usercontent.google.com/ https://lh3.googleusercontent.com`
+      : `'self' data: ${allowedApiOrigins} https://drive.google.com https://drive.usercontent.google.com/ https://lh3.googleusercontent.com`;
 
-export function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
 
   // Previous CSP included both 'unsafe-inline' and a nonce for script/style.

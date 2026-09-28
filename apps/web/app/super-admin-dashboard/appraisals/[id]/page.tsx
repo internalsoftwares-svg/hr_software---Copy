@@ -380,7 +380,7 @@ function SuperAdminAppraisalDetail() {
                   <>
                     <tr className="hover:bg-surface-2/50 transition-colors">
                       <td className="px-6 py-4 text-text-2">13</td>
-                      <td className="px-6 py-4 font-medium text-text">HOD's Remarks</td>
+                      <td className="px-6 py-4 font-medium text-text">HOD&apos;s Remarks</td>
                       <td className="px-6 py-4 text-text-2">—</td>
                       <td className="px-6 py-4">
                         {(appraisal.hodRemarks && typeof (() => {
@@ -512,7 +512,7 @@ function SuperAdminAppraisalDetail() {
         ) && (
           <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-widest text-text-3 mb-3">
-              HOD's Overall Remark
+              HOD&apos;s Overall Remark
             </p>
             <div className="rounded-lg border border-border bg-bg p-4 text-sm text-text-2 whitespace-pre-wrap">
               {(() => {

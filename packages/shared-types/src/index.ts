@@ -11,7 +11,8 @@ export type AppraisalStatus =
   | "COMMITTEE_REVIEW"
   | "HR_FINALIZED"
   | "FULLY_APPROVED"
-  | "CLOSED";
+  | "CLOSED"
+  | "REJECTED";
 
 export interface ApiResponse<T> {
   success: boolean;

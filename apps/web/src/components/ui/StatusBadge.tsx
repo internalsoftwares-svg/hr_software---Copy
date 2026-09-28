@@ -31,6 +31,10 @@ const statusMap: Record<AppraisalStatus, { label: string; className: string }> =
       label: "Closed",
       className: "border-slate-200 bg-slate-100 text-slate-600",
     },
+    REJECTED: {
+      label: "Rejected",
+      className: "border-red-200 bg-red-50 text-red-700",
+    },
   };
 
 export function StatusBadge({
