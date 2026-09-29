@@ -1,5 +1,6 @@
 import express from "express";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import {
   authenticateRequest,
   AuthenticatedRequest,
@@ -808,14 +809,16 @@ router.post(
           });
 
           // Update each AppraisalItem
-          for (const item of itemsToUpdate) {
-            await transaction.appraisalItem.update({
-              where: { id: item.id },
-              data: {
-                points: item.points,
-                notes: item.notes,
-              },
-            });
+          const itemUpdateRows = itemsToUpdate
+            .map((item) => Prisma.sql`(${item.id}::text, ${item.points}::int, ${item.notes}::text)`);
+
+          if (itemUpdateRows.length > 0) {
+            await transaction.$executeRaw`
+              UPDATE "AppraisalItem" AS ai
+              SET points = v.points, notes = v.notes
+              FROM (VALUES ${Prisma.join(itemUpdateRows)}) AS v(id, points, notes)
+              WHERE ai.id = v.id
+            `;
           }
         }),
         writeAuditLog({
