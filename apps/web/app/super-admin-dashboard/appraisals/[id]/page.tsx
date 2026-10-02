@@ -72,6 +72,7 @@ function SuperAdminAppraisalDetail() {
   const [remark, setRemark] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  const [resetReason, setResetReason] = useState("");
   const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
@@ -150,15 +151,23 @@ function SuperAdminAppraisalDetail() {
 
   async function handleReset() {
     if (!appraisal) return;
+    if (!resetReason.trim()) {
+      toast({
+        title: "Error",
+        description: "Please provide a reason for returning to committee.",
+        variant: "error",
+      });
+      return;
+    }
 
     try {
       setResetting(true);
 
-      await api.superAdmin.resetToCommittee(appraisal.id);
+      await api.superAdmin.returnToCommittee(appraisal.id, { reason: resetReason });
 
       toast({
         title: "Success",
-        description: "Appraisal reset successfully. Sent back to Committee Review.",
+        description: "Appraisal returned to Committee Review.",
         variant: "success",
       });
       setTimeout(() => {
@@ -639,7 +648,7 @@ function SuperAdminAppraisalDetail() {
                   onClick={() => setConfirmResetOpen(true)}
                 >
                   {resetting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  {resetting ? "Resetting..." : "Reset"}
+                  {resetting ? "Returning..." : "Return to Committee"}
                 </button>
 
                 <Link
@@ -755,17 +764,33 @@ function SuperAdminAppraisalDetail() {
       {/* Reset Review Confirmation */}
       <ConfirmDialog
         open={confirmResetOpen}
-        title="Confirm Reset Review"
+        title="Return to Committee Review"
         description={
           <div className="space-y-4">
             <p>
-              This will send the appraisal back to <span className="font-semibold text-text">Committee Review</span> and clear the previous Committee and HR reviews. The original Faculty/HOD submission will be preserved.
+              This will return the appraisal to <span className="font-semibold text-text">Committee Review</span> so they can update it. Their previous scoring will be preserved.
             </p>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-text">
+                Reason for returning <span className="text-danger">*</span>
+              </label>
+              <textarea
+                value={resetReason}
+                onChange={(e) => setResetReason(e.target.value)}
+                placeholder="Explain why this appraisal is being returned..."
+                className="w-full rounded-lg border border-border bg-surface p-2 text-sm text-text focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                rows={3}
+              />
+            </div>
           </div>
         }
-        confirmLabel={resetting ? "Resetting..." : "Reset Review"}
+        confirmLabel={resetting ? "Returning..." : "Return to Committee"}
         onCancel={() => setConfirmResetOpen(false)}
         onConfirm={() => {
+          if (!resetReason.trim()) {
+             toast({ title: "Error", description: "Reason is required", variant: "error" });
+             return;
+          }
           setConfirmResetOpen(false);
           void handleReset();
         }}

@@ -57,6 +57,7 @@ type CommitteeAppraisalDetail = {
   finalScore?: number | null;
   committeeNotes?: string | null;
   hodRemarks?: string | null;
+  superAdminRemark?: string | null;
   categoryApprovals?: CategoryApprovalRow[];
 };
 
@@ -78,6 +79,7 @@ type CommitteeAppraisalDetailResponse = Omit<
     notes?: string | null;
   }>;
   hodRemarks?: string | null;
+  superAdminRemark?: string | null;
   categoryApprovals?: CategoryApprovalRow[];
 };
 
@@ -422,6 +424,7 @@ function CommitteeReviewPage() {
           finalScore: payload.finalScore,
           committeeNotes: payload.committeeNotes,
           hodRemarks: payload.hodRemarks,
+          superAdminRemark: payload.superAdminRemark,
           categoryApprovals: payload.categoryApprovals ?? [],
         });
 
@@ -430,9 +433,10 @@ function CommitteeReviewPage() {
         const initialState: Record<string, ItemState> = {};
         nextItems.forEach((item) => {
           initialState[item.id] = {
-            // In edit mode: start from HOD approved; in view mode we show committeeApprovedPoints separately
-            approvedPoints: item.hodApprovedPoints,
-            remark: "",
+            // In edit mode: if it was returned by super admin, it might already have committee points.
+            // If committeeApprovedPoints exists, use that. Otherwise start from HOD approved.
+            approvedPoints: item.committeeApprovedPoints ?? item.hodApprovedPoints,
+            remark: item.committeeRemark ?? "",
           };
         });
         setItemState(initialState);
@@ -814,6 +818,17 @@ function CommitteeReviewPage() {
               submitted review below (read-only).
             </p>
           </div>
+        </div>
+      )}
+
+      {appraisal?.superAdminRemark && (
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 shadow-sm">
+          <h3 className="text-sm font-bold text-red-800">
+            Returned by Super Admin
+          </h3>
+          <p className="mt-1 text-sm text-red-700">
+            {appraisal.superAdminRemark}
+          </p>
         </div>
       )}
 

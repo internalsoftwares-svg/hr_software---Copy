@@ -286,10 +286,10 @@ const baseCriteria: PolicyCriterion[] = [
       "XI. Student Attendance in Subjects Taught During the Last Semester",
     category: "Academics",
     options: [
-      { value: "more_than_80", label: "More than 80%", points: 1 },
-      { value: "more_than_90", label: "More than 90%", points: 2 },
-      { value: "more_than_95", label: "More than 95%", points: 3 },
-      { value: "hundred_percent", label: "100%", points: 4 },
+      { value: "between_70_75", label: "70-75%", points: 1 },
+      { value: "between_76_85", label: "76-85%", points: 2 },
+      { value: "between_86_90", label: "86-90%", points: 3 },
+      { value: "more_than_90", label: "More than 90%", points: 4 },
       { value: "none_of_the_above", label: "None of the above", points: 0 },
     ],
   },
@@ -301,7 +301,7 @@ const baseCriteria: PolicyCriterion[] = [
       {
         value: "university_or_community",
         label:
-          "University / Community Certificate or Award OR Employee of the Month",
+          "University / Community Certificate or Award OR Employee of the Month At svgoi level",
         points: 1,
       },
       { value: "state_award", label: "State-Level Award", points: 2 },

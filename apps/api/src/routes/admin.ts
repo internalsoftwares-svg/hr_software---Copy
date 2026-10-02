@@ -18,40 +18,50 @@ router.get(
   requireRoles("SUPER_ADMIN"),
   async (_req: AuthenticatedRequest, res, next) => {
     try {
-      const [totalUsers, totalAppraisals, appraisalsByStatus, roleDistribution, users] =
-        await Promise.all([
-          prisma.user.count({ where: { deletedAt: null } }),
-          prisma.appraisal.count(),
-          prisma.appraisal.groupBy({ by: ["status"], _count: true }),
-          prisma.userRole.groupBy({ by: ["role"], _count: true }),
-          prisma.user.findMany({
-            where: { deletedAt: null },
-            select: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-              createdAt: true,
-              updatedAt: true,
-              roles: { select: { role: true } },
-            },
-            orderBy: { createdAt: "desc" },
-            take: 200,
-          }),
-        ]);
+      const [
+        totalUsers,
+        totalAppraisals,
+        appraisalsByStatus,
+        roleDistribution,
+        users,
+      ] = await Promise.all([
+        prisma.user.count({ where: { deletedAt: null } }),
+        prisma.appraisal.count(),
+        prisma.appraisal.groupBy({ by: ["status"], _count: true }),
+        prisma.userRole.groupBy({ by: ["role"], _count: true }),
+        prisma.user.findMany({
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            createdAt: true,
+            updatedAt: true,
+            roles: { select: { role: true } },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 200,
+        }),
+      ]);
 
       res.json({
         success: true,
         message: "Admin dashboard",
         data: {
-          stats: { totalUsers, totalAppraisals, appraisalsByStatus, roleDistribution },
+          stats: {
+            totalUsers,
+            totalAppraisals,
+            appraisalsByStatus,
+            roleDistribution,
+          },
           users,
         },
       });
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 // Get all users with their roles
@@ -84,7 +94,7 @@ router.get(
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 // Get system statistics
@@ -94,13 +104,17 @@ router.get(
   requireRoles("SUPER_ADMIN"),
   async (_req: AuthenticatedRequest, res, next) => {
     try {
-      const [totalUsers, totalAppraisals, appraisalsByStatus, roleDistribution] =
-        await Promise.all([
-          prisma.user.count(),
-          prisma.appraisal.count(),
-          prisma.appraisal.groupBy({ by: ["status"], _count: true }),
-          prisma.userRole.groupBy({ by: ["role"], _count: true }),
-        ]);
+      const [
+        totalUsers,
+        totalAppraisals,
+        appraisalsByStatus,
+        roleDistribution,
+      ] = await Promise.all([
+        prisma.user.count(),
+        prisma.appraisal.count(),
+        prisma.appraisal.groupBy({ by: ["status"], _count: true }),
+        prisma.userRole.groupBy({ by: ["role"], _count: true }),
+      ]);
 
       res.json({
         success: true,
@@ -115,7 +129,7 @@ router.get(
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 // Get audit logs
@@ -153,7 +167,7 @@ router.get(
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 // Assign role to user
@@ -221,7 +235,7 @@ router.post(
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 // Remove role from user
@@ -285,7 +299,7 @@ router.delete(
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 // Get user with their roles
@@ -327,7 +341,7 @@ router.get(
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 // SUPER ADMIN APPRAISAL APPROVAL ROUTES
@@ -353,10 +367,16 @@ router.get(
       const requestedStatus = status as string | undefined;
       const where: any = {};
 
-      if (requestedStatus === "SUPER_ADMIN_PENDING" || requestedStatus === "ADMIN_REVIEW") {
+      if (
+        requestedStatus === "SUPER_ADMIN_PENDING" ||
+        requestedStatus === "ADMIN_REVIEW"
+      ) {
         // "Pending" spans both statuses — appraisals can sit in either depending on workflow stage.
         where.status = { in: ["ADMIN_REVIEW", "SUPER_ADMIN_PENDING"] };
-      } else if (requestedStatus === "FULLY_APPROVED" || requestedStatus === "HR_FINALIZED") {
+      } else if (
+        requestedStatus === "FULLY_APPROVED" ||
+        requestedStatus === "HR_FINALIZED"
+      ) {
         where.status = requestedStatus;
       } else {
         // "All Statuses" (empty) or unrecognized value — show everything relevant to this dashboard.
@@ -426,7 +446,7 @@ router.get(
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 // Aggregate stats for the summary cards — always computed across all statuses
@@ -456,7 +476,10 @@ router.get(
       const [pendingCount, approvedCount, totalAppraisals, salaryRows] =
         await Promise.all([
           prisma.appraisal.count({
-            where: { ...where, status: { in: ["ADMIN_REVIEW", "SUPER_ADMIN_PENDING"] } },
+            where: {
+              ...where,
+              status: { in: ["ADMIN_REVIEW", "SUPER_ADMIN_PENDING"] },
+            },
           }),
           prisma.appraisal.count({
             where: { ...where, status: "FULLY_APPROVED" },
@@ -493,7 +516,7 @@ router.get(
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 // Get appraisal detail for Super Admin approval
@@ -572,14 +595,14 @@ router.get(
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 // Super Admin approves appraisal with optional percentage adjustment
 const superAdminApproveSchema = z.object({
   adjustedPercent: z.preprocess(
     (value) => (value === null ? undefined : value),
-    z.number().optional(),
+    z.number().optional()
   ),
   remark: z.string().optional(),
 });
@@ -690,12 +713,12 @@ router.post(
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
-// Super Admin resets an appraisal back to Committee Review
+// Super Admin returns an appraisal back to Committee Review
 router.post(
-  "/appraisals/:appraisalId/reset-to-committee",
+  "/appraisals/:appraisalId/return-to-committee",
   authenticateRequest,
   requireRoles("SUPER_ADMIN"),
   async (req: AuthenticatedRequest, res, next) => {
@@ -709,6 +732,17 @@ router.post(
       }
 
       const { appraisalId } = req.params;
+      const { reason } = req.body;
+
+      if (!reason || typeof reason !== "string" || !reason.trim()) {
+        res
+          .status(400)
+          .json({
+            success: false,
+            message: "Reason is required for returning to committee",
+          });
+        return;
+      }
 
       const appraisal = await prisma.appraisal.findUnique({
         where: { id: appraisalId },
@@ -751,10 +785,10 @@ router.post(
         "department_university_positions",
       ];
       const isHodSelfAppraisal = appraisal.items.some((item) =>
-        HOD_CRITERIA_KEYS.includes(item.key),
+        HOD_CRITERIA_KEYS.includes(item.key)
       );
 
-      // 3. Process the items to restore points and strip hr/committee reviews
+      // 3. Process the items to restore points to committee's points and strip ONLY hr reviews
       const itemsToUpdate = appraisal.items.map((item) => {
         let parsedNotes: any = {};
         if (item.notes) {
@@ -766,18 +800,22 @@ router.post(
         }
 
         let newPoints = item.points;
-        if (isHodSelfAppraisal) {
+        if (parsedNotes?.committeeReview?.approvedPoints !== undefined) {
+          newPoints = Number(parsedNotes.committeeReview.approvedPoints) || 0;
+        } else if (isHodSelfAppraisal) {
           if (parsedNotes?.originalSubmittedPoints !== undefined) {
-            newPoints = Number(parsedNotes.originalSubmittedPoints);
+            newPoints = Number(parsedNotes.originalSubmittedPoints) || 0;
           }
         } else {
           if (parsedNotes?.hodReview?.approvedPoints !== undefined) {
-            newPoints = Number(parsedNotes.hodReview.approvedPoints);
+            newPoints = Number(parsedNotes.hodReview.approvedPoints) || 0;
           }
         }
 
-        // Delete previous committee and hr reviews
-        delete parsedNotes.committeeReview;
+        // Ensure newPoints is an integer to avoid Postgres cast errors
+        newPoints = Math.round(newPoints);
+
+        // Delete previous hr review, but keep committeeReview intact
         delete parsedNotes.hrReview;
 
         return {
@@ -791,14 +829,14 @@ router.post(
 
       await Promise.all([
         prisma.$transaction(async (transaction) => {
-          // Update appraisal status and clear review fields
+          // Update appraisal status, set reason, and clear super admin fields
           await transaction.appraisal.update({
             where: { id: appraisalId },
             data: {
               status: "COMMITTEE_REVIEW",
-              committeeNotes: null,
+              // we don't clear committeeNotes since we want them to resume their draft
               adminRemark: null,
-              superAdminRemark: null,
+              superAdminRemark: reason.trim(),
               superAdminApprovedPercent: null,
             },
           });
@@ -809,21 +847,25 @@ router.post(
           });
 
           // Update each AppraisalItem
-          const itemUpdateRows = itemsToUpdate
-            .map((item) => Prisma.sql`(${item.id}::text, ${item.points}::int, ${item.notes}::text)`);
+          const itemUpdateRows = itemsToUpdate.map(
+            (item) =>
+              Prisma.sql`(${item.id}::text, ${item.points}::int, ${item.notes}::text)`
+          );
 
           if (itemUpdateRows.length > 0) {
             await transaction.$executeRaw`
               UPDATE "AppraisalItem" AS ai
               SET points = v.points, notes = v.notes
-              FROM (VALUES ${Prisma.join(itemUpdateRows)}) AS v(id, points, notes)
+              FROM (VALUES ${Prisma.join(
+                itemUpdateRows
+              )}) AS v(id, points, notes)
               WHERE ai.id = v.id
             `;
           }
         }),
         writeAuditLog({
           actorId,
-          action: "appraisal.super_admin.reset_to_committee",
+          action: "appraisal.super_admin.return_to_committee",
           resource: "Appraisal",
           resourceId: appraisalId,
           meta: { previousStatus },
@@ -832,7 +874,7 @@ router.post(
 
       res.json({
         success: true,
-        message: "Appraisal reset to committee review successfully",
+        message: "Appraisal returned to committee review successfully",
         data: {
           appraisalId,
           status: "COMMITTEE_REVIEW",
@@ -841,7 +883,7 @@ router.post(
     } catch (error) {
       next(error);
     }
-  },
+  }
 );
 
 export default router;
